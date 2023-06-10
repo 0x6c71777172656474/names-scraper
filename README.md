@@ -1,4 +1,4 @@
-# 🦊 Blockchain address metadata collector
+# 🦊 Names scraper
 Grab names of smart contracts (only verified for now) and EOA domain's titles (if it's exist).
 
 # Install
