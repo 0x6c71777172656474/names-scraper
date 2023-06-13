@@ -1,20 +1,29 @@
-require("dotenv").config();
-const ethers = require("ethers");
-const axios = require("axios");
-const path = require("path");
-const fs = require("fs");
-const csvParser = require("csv-parser");
-// const { stringify } = require("csv-stringify");
+"use strict";
 
-const ABI = require("./data_files/ens_abi.json");
+import "dotenv/config";
+import { providers } from "ethers";
+import axios from "axios";
+import fs from "fs";
+import { createReadStream } from "fs";
+import csvParser from "csv-parser";
+// const { stringify } = require("csv-stringify");
+import makeRequest from "./meta.js";
 const CSV = "./data_files/example.csv";
 
 let csvAddresses = [];
-let completeArr = [];
+let eoaArray = [];
+let contractArray = [];
 const folders = ["data_files"];
 const csv = [["address", "contractName", "eoaName"]];
 
-const provider = new ethers.providers.WebSocketProvider(
+const SELECTOR_LIST = [
+  "#ContentPlaceHolder1_divLabels",
+  "#ContentPlaceHolder1_trContract div",
+  "#ContentPlaceHolder1_tr_tokeninfo div",
+  "#ContentPlaceHolder1_divMultichainAddress div div div ul",
+];
+
+const provider = new providers.WebSocketProvider(
   `wss://mainnet.infura.io/ws/v3/${process.env.INFURA_API_KEY}`
 );
 
@@ -61,7 +70,7 @@ async function readCSV(csvFilePath) {
   return new Promise((resolve, reject) => {
     const rows = [];
 
-    fs.createReadStream(csvFilePath)
+    createReadStream(csvFilePath)
       .pipe(csvParser())
       .on("data", (row) => {
         rows.push(row);
@@ -104,21 +113,50 @@ async function main() {
   if (csvAddresses.length > 0) {
     for (let j = 0; j < csvAddresses.length; j++) {
       if (await isEOA(csvAddresses[j])) {
+
+        console.log("eoa " + j);
         const eoaName = await ensNameScraper(csvAddresses[j].toLowerCase());
         if (eoaName != null) {
-          completeArr.push({ address: csvAddresses[j], eoaName: eoaName });
+          eoaArray.push({ address: csvAddresses[j], eoaName: eoaName });
         }
       } else {
+        console.log("contract " + j);
+        const labels = await makeRequest(csvAddresses[j], SELECTOR_LIST[0]);
+        const creator = await makeRequest(csvAddresses[j], SELECTOR_LIST[1]);
+        const tokenInfo = await makeRequest(csvAddresses[j], SELECTOR_LIST[2]);
+        const chains = await makeRequest(csvAddresses[j], SELECTOR_LIST[3]);
+        
         const contractName = await getContractName(csvAddresses[j]);
         if (contractName != null) {
-          completeArr.push({
+          contractArray.push({
             address: csvAddresses[j],
             contractName: contractName,
+            contractData: {
+              labels:labels,
+              creator: creator,
+              tokenInfo: tokenInfo,
+              chains: chains,
+            },
           });
         }
       }
     }
-    console.log(JSON.stringify(completeArr, null, 2));
+    const jsonContract = JSON.stringify(contractArray);
+    const jsonEOA = JSON.stringify(eoaArray);
+
+    fs.writeFileSync('contracts.json', jsonContract, 'utf8', err => {
+      if (err) {
+        console.error(err);
+      }
+      console.log("Success. Read contracts.json file");
+    });
+
+    fs.writeFileSync('eoa.json', jsonEOA, 'utf8', err => {
+      if (err) {
+        console.error(err);
+      }
+      console.log("Success. Read eoa.json file");
+    });
   }
 }
 
