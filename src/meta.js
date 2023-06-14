@@ -1,24 +1,8 @@
 "use strict";
 
-/**
- * Possible selectors mapping
- * 0 #ContentPlaceHolder1_divLabels - etherscan labels
- * 1 #ContentPlaceHolder1_trContract - contract creator
- * 2 #ContentPlaceHolder1_tr_tokeninfo - token info with logo
- * 3 #ContentPlaceHolder1_divMultichainAddress - if contract deployed in other chains
- */
-
 import { parse } from "node-html-parser";
 import axios from "axios";
-
-const ETHERSCAN = "https://etherscan.io";
-
-const SELECTOR_LIST = [
-  "#ContentPlaceHolder1_divLabels",
-  "#ContentPlaceHolder1_trContract div",
-  "#ContentPlaceHolder1_tr_tokeninfo div",
-  "#ContentPlaceHolder1_divMultichainAddress div div div ul",
-];
+import { SELECTOR_LIST, ETHERSCAN } from "./constants.js";
 
 async function getChains(data) {
   let arr = [];
@@ -108,26 +92,65 @@ async function getLabels(data) {
   }
 }
 
-const makeRequest = async (address, selector) => {
-  const response = await axios.get(`https://etherscan.io/address/${address}`);
-  try {
-    const root = parse(response.data);
-    const data = root.querySelector(selector).childNodes;
-    switch (selector) {
-      case SELECTOR_LIST[0]:
-        return await getLabels(data);
-      case SELECTOR_LIST[1]:
-        return await getCreator(data);
-      case SELECTOR_LIST[2]:
-        return await getTokenInfo(data);
-      case SELECTOR_LIST[3]:
-        return await getChains(data);
-      default:
-        break;
+async function isContract(data) {
+  let isContract = false;
+  let isVerified = false;
+  if (data.length > 0) {
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].rawTagName === "li") {
+        if (data[i].id === "ContentPlaceHolder1_li_contracts") {
+          isContract = true;
+          const verif = data[i].childNodes[1].childNodes[1];
+          if (verif != null && verif != undefined) {
+            if (verif.rawTagName === "i") {
+              isVerified = true;
+            }
+          }
+        }
+      }
     }
-  } catch (e) {
-    return "empty";
   }
+  return { isContract, isVerified };
+}
+
+async function getContractName(data) {
+  return data[0]._rawText;
+}
+
+const makeRequest = async (address, selector) => {
+  return await axios
+    .get(`${ETHERSCAN}/address/${address}`, { timeout: 10000 })
+    .then(async (response) => {
+      const root = parse(response.data);
+      const data = root.querySelector(selector).childNodes;
+      switch (selector) {
+        case SELECTOR_LIST[0]:
+          return await getLabels(data);
+        case SELECTOR_LIST[1]:
+          return await getCreator(data);
+        case SELECTOR_LIST[2]:
+          return await getTokenInfo(data);
+        case SELECTOR_LIST[3]:
+          return await getChains(data);
+        case SELECTOR_LIST[4]:
+          return await isContract(data);
+        case SELECTOR_LIST[5]:
+          return await getContractName(data);
+        default:
+          break;
+      }
+    })
+    .catch(async (error) => {
+      if (error.response) {
+        console.error("Server responded with an error:", error.response.status);
+        return "error";
+      } else if (error.request) {
+        console.error("No response received");
+        return "error";
+      } else {
+      }
+    })
+    .finally(() => {});
 };
 
 export default makeRequest;
